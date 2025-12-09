@@ -1,0 +1,417 @@
+from tkinter import *
+from tkinter import messagebox
+from PIL import ImageTk, Image
+import random
+import os
+import shelve
+
+try:
+    import pygame
+
+    SOUND_ENABLED = True
+except ImportError:
+    SOUND_ENABLED = False
+    print("Pygame not found. Sounds will be disabled.")
+
+
+try:
+    from data import questions
+except ImportError:
+
+    questions = {
+        "radio waves": "radar",
+        "compact automobile": "civic",
+        "mother": "mom",
+        "numerical summaries": "stats",
+        "narrow boat": "kayak",
+        "father": "dad",
+        "twelve o’clock daytime": "noon",
+        "short laugh in chat": "lol",
+        "quick popping sound": "pop",
+        "quick peek": "peep",
+        "more than one solo": "solos",
+        "tiny amount": "pip",
+        "phrase about avoiding evil": "no evil live on",
+        "common reaction to something exciting": "wow",
+        "small child": "tot",
+        "sister": "sis",
+        "nickname for Robert": "bob",
+        "confused reaction": "huh",
+        "a calm and simple name": "eve",
+        "something a baby might say": "gag",
+        "the organ used for seeing": "eye",
+        "a short music performance": "gig",
+        "a girl's name that reads the same both ways": "anna",
+        "more red than red": "redder",
+        "a guiding belief or principle": "tenet",
+        "number of data": "stats",
+        "surprised reaction": "wow",
+        "another girl's name that read the same": "hannah",
+        "a word meaning; made into a god ": "deified",
+        "a funny word involving a cat and tacos": "tacocat",
+        "a word for someone who brings things back": "reviver",
+        "a phrase about nurses jogging": "nurses run",
+        "a food sold in Venezuelan shops": "arepera",
+        "a word meaning; to cover again": "repaper",
+        "something you say when you suddenly understand": "aha"
+    }
+
+
+FEEDBACK_DELAY = 1500
+
+DEFAULT_FONT = "Arial"
+QUESTION_FONT = "Arial"
+def load_high_score():
+    try:
+        with shelve.open("highscore") as db:
+            return db.get("high_score", 0)
+    except Exception as e:
+        print(f"Error loading high score: {e}")
+        return 0
+
+
+def save_high_score(score):
+    try:
+        with shelve.open("highscore") as db:
+            db["high_score"] = score
+    except Exception as e:
+        print(f"Error saving high score: {e}")
+
+
+root = Tk()
+root.geometry("440x520")
+root.title("Palin-Game")
+root.configure(bg="#E98FC6")
+root.columnconfigure(0, weight=1)
+root.columnconfigure(1, weight=0)
+
+try:
+    palin_header_raw = Image.open("images/header.png")
+    palin_header_raw = palin_header_raw.resize((380, 120), Image.LANCZOS)  # Resized
+    palin_header = ImageTk.PhotoImage(palin_header_raw)
+except Exception as e:
+    print("Could not load header image:", e)
+    palin_header = None
+
+music_on = True
+sfx_on = True
+
+sfx_correct = None
+sfx_wrong = None
+sfx_click = None
+sfx_gameover = None
+
+
+def init_audio():
+    if not SOUND_ENABLED:
+        return
+
+    try:
+        pygame.mixer.init()
+    except Exception as e:
+        print("Pygame mixer init error:", e)
+        return
+
+    try:
+        bg_music = "sounds/austin chen - faces (audio).mp3"
+        if os.path.exists(bg_music):
+            pygame.mixer.music.load(bg_music)
+            pygame.mixer.music.set_volume(0.3)
+            pygame.mixer.music.play(-1)
+
+
+        global sfx_correct, sfx_wrong, sfx_click, sfx_gameover
+
+        correct = "sounds/correct-sound-effect-and-wrong-sound-effect-1_phvGKIWZ.mp3"
+        wrong = "sounds/correct-sound-effect-and-wrong-sound-effect-1_Ne1veKG6.mp3"
+        click = "sounds/click-sound-effect-hd_QuNc8d4n.mp3"
+        gameover = "sounds/arcade-retro-game-over-sound-effect-final-cut_xqFtHIg9.mp3"
+
+        sfx_correct = pygame.mixer.Sound(correct) if os.path.exists(correct) else None
+        sfx_wrong = pygame.mixer.Sound(wrong) if os.path.exists(wrong) else None
+        sfx_click = pygame.mixer.Sound(click) if os.path.exists(click) else None
+        sfx_gameover = pygame.mixer.Sound(gameover) if os.path.exists(gameover) else None
+
+    except Exception as e:
+        print("Audio load error:", e)
+
+
+def play_sfx(name):
+    if not SOUND_ENABLED or not sfx_on:
+        return
+
+    try:
+        if name == "correct" and sfx_correct:
+            sfx_correct.play()
+        elif name == "wrong" and sfx_wrong:
+            sfx_wrong.play()
+        elif name == "click" and sfx_click:
+            sfx_click.play()
+        elif name == "gameover" and sfx_gameover:
+            sfx_gameover.play()
+    except:
+        pass
+
+
+def toggle_music():
+    global music_on
+    if not SOUND_ENABLED:
+        return
+
+    try:
+        if music_on:
+            pygame.mixer.music.pause()
+            btn_music.config(text="Music: OFF")
+        else:
+            pygame.mixer.music.unpause()
+            btn_music.config(text="Music: ON")
+
+        music_on = not music_on
+    except:
+        pass
+
+
+def toggle_sfx():
+    global sfx_on
+    if not SOUND_ENABLED:
+        return
+
+    sfx_on = not sfx_on
+    if sfx_on:
+        btn_sfx.config(text="SFX: ON")
+    else:
+        btn_sfx.config(text="SFX: OFF")
+
+MAX_attempts = 3
+attempts = 0
+score = 0
+high_score = load_high_score()
+correct_ans = ""
+
+lives_var = StringVar()
+score_var = StringVar()
+high_score_var = StringVar()
+
+instruction_win = None
+
+
+def isPalindrome(word):
+    w = "".join(word.lower().split())
+    return w == w[::-1] if w else False
+
+
+def ud_display():
+    remaining = MAX_attempts - attempts
+    lives_var.set("🐱" * remaining)
+    score_var.set(f"Final Score: {score}")
+    high_score_var.set(f"High Score: {high_score}")
+
+
+def update_high_score():
+    global high_score
+    if score > high_score:
+        high_score = score
+        save_high_score(high_score)
+        high_score_var.set(f"High Score: {high_score}")
+
+
+def reset_game():
+    global attempts, score
+    attempts = 0
+    score = 0
+    entry_answ.config(state=NORMAL)
+    entry_answ.delete(0, END)
+    button_answer.config(text="Answer", command=check_ans, bg="SystemButtonFace", fg="black")
+    label_question.config(text="Loading Question...", fg="black")
+    ud_display()
+    question()
+
+
+def game_over():
+    play_sfx("gameover")
+
+    update_high_score()
+
+    message = f"GAME OVER! Final Score: {score}"
+    if score == high_score and score > 0:
+        message = f"NEW HIGH SCORE! Score: {score}"
+    elif score > 0:
+        message += f"\nHigh Score: {high_score}"
+
+    messagebox.showinfo("Game Over", message)
+
+    button_answer.config(text="PLAY AGAIN", command=reset_game, bg="green", fg="white")
+    entry_answ.config(state=DISABLED)
+
+
+def question():
+    global correct_ans
+    clue = random.choice(list(questions.keys()))
+    correct_ans = questions[clue]
+    label_question.config(text=f"Clue: {clue}", fg="black")
+    entry_answ.delete(0, END)
+
+
+def check_ans(event=None):
+    global attempts, score
+    play_sfx("click")
+
+    user_input = entry_answ.get().strip().lower()
+
+    if user_input == correct_ans:
+        score += 10
+        play_sfx("correct")
+        label_question.config(text="CORRECT! Next Question...", fg="green")
+        ud_display()
+        update_high_score()
+        root.after(FEEDBACK_DELAY, question)
+    else:
+        is_last_life = (attempts == MAX_attempts - 1)
+
+        attempts += 1
+
+        if is_last_life:
+            pass
+        else:
+            play_sfx("wrong")
+
+        if isPalindrome(user_input):
+            label_question.config(text="Palindrome, but wrong answer! (-1 Life)", fg="orange")
+        else:
+            label_question.config(text="INCORRECT!", fg="red")
+
+        ud_display()
+
+        if attempts >= MAX_attempts:
+            root.after(100, game_over)
+        else:
+            root.after(FEEDBACK_DELAY, question)
+
+
+def show_hints():
+    play_sfx("click")
+
+    answers = sorted(list(set(questions.values())))
+    hint_list = "\n".join(answers)
+
+    current_clue = label_question.cget("text").replace("Clue: ", "")
+    current_answer = correct_ans
+
+    hint_message = f"CURRENT QUESTION:\nClue: **{current_clue}**\nAnswer: **{current_answer}**\n\n"
+    hint_message += f"--- ALL POSSIBLE PALINDROME ANSWERS ({len(answers)} total) ---\n"
+    hint_message += hint_list
+
+    messagebox.showinfo("Hints 💡", hint_message)
+
+
+def show_instruction():
+    global instruction_win
+    play_sfx("click")
+
+    if instruction_win and instruction_win.winfo_exists():
+        instruction_win.lift()
+        return
+
+    instruction_win = Toplevel(root)
+    instruction_win.title("Instruction")
+    instruction_win.geometry("360x390")
+    instruction_win.configure(bg="#f3f0df")
+
+    def on_close():
+        play_sfx("click")
+        instruction_win.destroy()
+
+    instruction_win.protocol("WM_DELETE_WINDOW", on_close)
+
+    Label(instruction_win, text="Game Instructions", font=(DEFAULT_FONT, 16, "bold"),
+          bg="#f3f0df", fg="#005088").pack(pady=10)
+
+    instruction_text = (
+        "Palindromes are words or phrases that read the same forwards and backwards.\n\n"
+        "Instructions:\n"
+        "The goal is to guess the palindrome based on the clue.\n"
+        "You start with 3 Lives.\n"
+        "A wrong answer will cause you to lose 1 life.\n"
+        "A correct answer will give you +10 points.\n"
+        "Spaces are ignored in your answer (e.g., 'no evil live on' can be entered as 'noevilliveon')."
+    )
+
+    Label(instruction_win, text=instruction_text, font=(DEFAULT_FONT, 12), justify=LEFT,
+          wraplength=300, bg="#f3f0df").pack(padx=10, pady=5)
+
+    Button(instruction_win, text="Close", command=on_close, font=(DEFAULT_FONT, 12, "bold"),
+           bg="#11caa0", fg="white").pack(pady=10)
+
+score_var.set(f"Final Score: {score}")
+
+Label(root, textvariable=score_var, font=(DEFAULT_FONT, 15, "bold"),
+      bg="#E98FC6", fg="dark blue").grid(row=0, column=0, columnspan=2, pady=5)
+
+frame_stats = Frame(root, bg="#E98FC6")
+frame_stats.grid(row=1, column=0, sticky="ew", padx=10)
+frame_stats.columnconfigure(0, weight=1)
+
+high_score_var.set(f"High Score: {high_score}")
+Label(frame_stats, textvariable=high_score_var, font=(DEFAULT_FONT, 14, "bold"),
+      bg="#E98FC6", fg="dark red").grid(row=0, column=0, sticky="w")
+
+frame_right_stats = Frame(root, bg="#E98FC6")
+frame_right_stats.grid(row=1, column=1, sticky="e", padx=10)
+
+frame_hints = Frame(frame_right_stats, bg="#E98FC6")
+frame_hints.pack(side=TOP, anchor="e", pady=(0, 2))
+
+Label(frame_hints, text="Hints", font=(DEFAULT_FONT, 10), bg="#E98FC6", fg="gray").pack(side=LEFT)
+
+Button(frame_hints, text="💡", command=show_hints, font=("Arial", 16),
+       bg="yellow", fg="black").pack(side=LEFT, padx=(5, 0))
+
+frame_lives = Frame(frame_right_stats, bg="#E98FC6")
+frame_lives.pack(side=TOP, anchor="e")
+
+Label(frame_lives, textvariable=lives_var, font=("Arial", 28),
+      fg="purple", bg="#E98FC6").pack(side=RIGHT)
+
+if palin_header:
+
+    Label(root, image=palin_header, bg="#E98FC6").grid(row=2, column=0, columnspan=2, pady=10)
+else:
+
+    Label(root, text="Palin-Game!", font=(DEFAULT_FONT, 18, "bold"),
+          fg="dark blue", relief=RAISED, bd=10, padx=10, pady=10).grid(row=2, column=0, columnspan=2, pady=10)
+
+label_question = Label(root, text="Loading Question...", font=(QUESTION_FONT, 15, "italic"),
+                       fg="black", bg="#E98FC6", wraplength=380)
+label_question.grid(row=3, column=0, columnspan=2, pady=20)
+
+entry_answ = Entry(root, width=22, font=(DEFAULT_FONT, 14, "bold"), bg="light gray")
+entry_answ.grid(row=4, column=0, columnspan=2, pady=10)
+
+root.bind("<Return>", check_ans)
+
+button_answer = Button(root, text="Answer", padx=45, pady=15, bd=5,
+                       font=(DEFAULT_FONT, 12, "bold"), command=check_ans)
+button_answer.grid(row=5, column=0, columnspan=2, pady=20)
+
+frame_controls = Frame(root, bg="#E98FC6")
+frame_controls.grid(row=6, column=0, columnspan=2, pady=10)
+
+Button(frame_controls, command=show_instruction, text="Instruction 🎀", fg="#DC143C",
+       bg="white", font=(DEFAULT_FONT, 12, "bold")).pack(side=LEFT, padx=10)
+
+frame_audio = Frame(root, bg="#E98FC6")
+frame_audio.grid(row=7, column=0, columnspan=2, pady=5)
+
+btn_music = Button(frame_audio, text="Music: ON", command=toggle_music,
+                   font=(DEFAULT_FONT, 11, "bold"), bg="white")
+btn_music.pack(side=LEFT, padx=5)
+
+btn_sfx = Button(frame_audio, text="SFX: ON", command=toggle_sfx,
+                 font=(DEFAULT_FONT, 11, "bold"), bg="white")
+btn_sfx.pack(side=LEFT, padx=5)
+
+init_audio()
+question()
+ud_display()
+
+root.mainloop()
